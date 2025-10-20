@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
-import "./MockTokenConverter.sol";
+import "./mocks/MockTokenConverter.sol";
 
 /**
  * @title APYExtra
@@ -14,11 +14,9 @@ contract APYExtra is AccessControl {
     uint256 public constant YEAR = 365 days;
     uint256 public constant APY_DENOMINATOR = 1000;
 
-    error ZeroAmount();
     error InsufficientBalance();
     error InvalidAdmin();
     error CallerNotRebalancer();
-    error ConverterNotSet();
 
     bytes32 public constant REBALANCER_ROLE = keccak256("REBALANCER_ROLE");
     bytes32 public constant APY_MANAGER_ROLE = keccak256("APY_MANAGER_ROLE");
@@ -126,11 +124,10 @@ contract APYExtra is AccessControl {
     /**
      * @notice Withdraw funds after accumulating earnings
      * @dev Accumulates earnings, converts tokens via external contract, updates balances
-     * @return convertedAmount Amount received after conversion
+     * @return convertedAmount Amount received after conversion (0 if conversion fails)
      */
     function withdraw(uint256 amount) external returns (uint256) {
-        if (amount == 0) revert ZeroAmount();
-        if (address(tokenConverter) == address(0)) revert ConverterNotSet();
+        if (amount == 0) return 0;
 
         address user = msg.sender;
         UserInfo storage userData = userInfo[user];
@@ -138,7 +135,11 @@ contract APYExtra is AccessControl {
         if (userData.balance < amount) revert InsufficientBalance();
 
         _accumulateUserAndReferrerEarnings(user);
-        uint256 convertedAmount = tokenConverter.convertAndBurn(amount, user);
+
+        uint256 convertedAmount = 0;
+        if (address(tokenConverter) != address(0)) {
+            convertedAmount = tokenConverter.convertAndBurn(amount, user);
+        }
 
         userData.balance -= amount;
         userData.lastUpdateTime = block.timestamp;
@@ -267,7 +268,7 @@ contract APYExtra is AccessControl {
         uint256 amount,
         address referrer
     ) internal {
-        if (amount == 0) revert ZeroAmount();
+        if (amount == 0) return;
 
         _accumulateUserAndReferrerEarnings(user);
         UserInfo storage userData = userInfo[user];
