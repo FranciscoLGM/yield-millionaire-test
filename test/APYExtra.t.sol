@@ -67,13 +67,6 @@ contract APYExtraTest is Test {
         return amount;
     }
 
-    function _warpAndAccumulate(address user, uint256 timeToWarp) internal {
-        vm.warp(block.timestamp + timeToWarp);
-        // Force accumulation by doing a zero deposit
-        vm.prank(rebalancer);
-        apyExtra.deposit(user, 0, 0, 0);
-    }
-
     // ============ CONSTRUCTOR AND SETUP TESTS ============
 
     function test_Constructor_InitialState() public view {
