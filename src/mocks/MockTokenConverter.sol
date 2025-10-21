@@ -29,6 +29,7 @@ contract MockTokenConverter {
         uint256 amount,
         address user
     ) external returns (uint256) {
+        require(address(targetToken) != address(0), "Invalid target token");
         uint256 convertedAmount = amount;
 
         require(targetToken.transfer(user, convertedAmount), "Transfer failed");

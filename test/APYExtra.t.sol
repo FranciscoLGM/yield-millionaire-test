@@ -5,6 +5,7 @@ import "forge-std/Test.sol";
 import "forge-std/console.sol";
 import "../src/APYExtra.sol";
 import "../src/mocks/MockTokenConverter.sol";
+import "../src/mocks/MockERC20.sol";
 
 contract APYExtraTest is Test {
     APYExtra public apyExtra;
@@ -30,20 +31,26 @@ contract APYExtraTest is Test {
     address public targetToken = makeAddr("targetToken");
 
     function setUp() public {
-        // Setup roles
         vm.startPrank(admin);
 
-        // Deploy converter
-        converter = new MockTokenConverter(sourceToken, targetToken);
+        // Deploy mock tokens
+        MockERC20 source = new MockERC20("SourceToken", "SRC");
+        MockERC20 target = new MockERC20("TargetToken", "TGT");
 
-        // Deploy main contract
+        // Deploy converter
+        converter = new MockTokenConverter(address(source), address(target));
+
+        // Mint tokens to converter for testing
+        target.mint(address(converter), 1_000_000 ether);
+
+        // Deploy APYExtra
         apyExtra = new APYExtra(
             admin,
             INITIAL_REFERRAL_APY,
             address(converter)
         );
 
-        // Setup roles
+        // Roles
         apyExtra.grantRole(apyExtra.REBALANCER_ROLE(), rebalancer);
         apyExtra.grantRole(apyExtra.APY_MANAGER_ROLE(), apyManager);
 
@@ -65,6 +72,13 @@ contract APYExtraTest is Test {
             apyExtra.deposit(user, expirationTime, extraAPY, amount, referrer_);
         }
         return amount;
+    }
+
+    function _warpAndAccumulate(address user, uint256 timeToWarp) internal {
+        vm.warp(block.timestamp + timeToWarp);
+        // Force accumulation by doing a zero deposit
+        vm.prank(rebalancer);
+        apyExtra.deposit(user, 0, 0, 0);
     }
 
     // ============ CONSTRUCTOR AND SETUP TESTS ============
@@ -181,5 +195,99 @@ contract APYExtraTest is Test {
 
         (, , actualAPY, , , ) = apyExtra.userInfo(user1);
         assertEq(actualAPY, 150); // Should keep the higher APY
+    }
+
+    // ============ WITHDRAW TESTS ============
+
+    function test_Withdraw_NormalFlow() public {
+        uint256 depositAmount = _depositForUser(
+            user1,
+            TEST_DEPOSIT_AMOUNT,
+            TEST_EXTRA_APY,
+            block.timestamp + TEST_EXPIRATION,
+            address(0)
+        );
+
+        vm.prank(user1);
+        uint256 convertedAmount = apyExtra.withdraw(depositAmount);
+
+        (, , , uint256 balanceAfter, , ) = apyExtra.userInfo(user1);
+        assertEq(balanceAfter, 0);
+        assertEq(convertedAmount, depositAmount);
+    }
+
+    function test_Withdraw_ZeroAmount() public {
+        vm.prank(user1);
+        uint256 result = apyExtra.withdraw(0);
+        assertEq(result, 0);
+    }
+
+    function test_Withdraw_InsufficientBalance() public {
+        _depositForUser(
+            user1,
+            TEST_DEPOSIT_AMOUNT,
+            TEST_EXTRA_APY,
+            TEST_EXPIRATION,
+            address(0)
+        );
+
+        vm.prank(user1);
+        vm.expectRevert(APYExtra.InsufficientBalance.selector);
+        apyExtra.withdraw(TEST_DEPOSIT_AMOUNT + 1);
+    }
+
+    function test_Withdraw_WithoutConverter() public {
+        vm.prank(admin);
+        vm.expectRevert(APYExtra.InvalidConverter.selector);
+        apyExtra.setTokenConverter(address(0));
+    }
+
+    function test_Withdraw_ConversionFailed() public {
+        // Setup - Depositar fondos
+        _depositForUser(
+            user1,
+            TEST_DEPOSIT_AMOUNT,
+            TEST_EXTRA_APY,
+            TEST_EXPIRATION,
+            address(0)
+        );
+
+        // Crear un converter que falle
+        MockTokenConverter failingConverter = new MockTokenConverter(
+            address(0),
+            address(0)
+        );
+        vm.prank(admin);
+        apyExtra.setTokenConverter(address(failingConverter));
+
+        // Intentar withdraw debería fallar
+        vm.prank(user1);
+        vm.expectRevert(APYExtra.ConversionFailed.selector);
+        apyExtra.withdraw(TEST_DEPOSIT_AMOUNT);
+
+        // Balance debería mantenerse intacto
+        (, , , uint256 balance, , ) = apyExtra.userInfo(user1);
+        assertEq(balance, TEST_DEPOSIT_AMOUNT);
+    }
+
+    function test_Withdraw_AccumulatesEarnings() public {
+        uint256 depositAmount = _depositForUser(
+            user1,
+            TEST_DEPOSIT_AMOUNT,
+            TEST_EXTRA_APY,
+            block.timestamp + TEST_EXPIRATION,
+            address(0)
+        );
+
+        // Warp 30 days to accumulate earnings
+        _warpAndAccumulate(user1, 30 days);
+
+        uint256 expectedEarnings = apyExtra.getLastEarnings(user1);
+
+        vm.prank(user1);
+        apyExtra.withdraw(depositAmount);
+
+        (, , , , uint256 accumulated, ) = apyExtra.userInfo(user1);
+        assertEq(accumulated, expectedEarnings);
     }
 }
