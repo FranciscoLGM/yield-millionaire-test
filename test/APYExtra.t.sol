@@ -290,4 +290,168 @@ contract APYExtraTest is Test {
         (, , , , uint256 accumulated, ) = apyExtra.userInfo(user1);
         assertEq(accumulated, expectedEarnings);
     }
+
+    // ============ EARNINGS CALCULATION TESTS ============
+
+    function test_GetLastEarnings_BasicCalculation() public {
+        _depositForUser(
+            user1,
+            TEST_DEPOSIT_AMOUNT,
+            TEST_EXTRA_APY,
+            block.timestamp + 365 days,
+            address(0)
+        );
+
+        // 30 days at 10% APY on 1000 tokens
+        _warpAndAccumulate(user1, 30 days);
+
+        uint256 expected = (TEST_DEPOSIT_AMOUNT * TEST_EXTRA_APY * 30 days) /
+            (apyExtra.APY_DENOMINATOR() * 365 days);
+        uint256 actual = apyExtra.getLastEarnings(user1);
+
+        assertEq(actual, expected);
+    }
+
+    function test_GetLastEarnings_APYDisabled() public {
+        _depositForUser(
+            user1,
+            TEST_DEPOSIT_AMOUNT,
+            TEST_EXTRA_APY,
+            TEST_EXPIRATION,
+            address(0)
+        );
+
+        vm.prank(apyManager);
+        apyExtra.toggleAPY();
+
+        _warpAndAccumulate(user1, 30 days);
+
+        uint256 earnings = apyExtra.getLastEarnings(user1);
+        assertEq(earnings, 0);
+    }
+
+    function test_GetLastEarnings_Expired() public {
+        _depositForUser(
+            user1,
+            TEST_DEPOSIT_AMOUNT,
+            TEST_EXTRA_APY,
+            block.timestamp + 10 days,
+            address(0)
+        );
+
+        // Warp past expiration
+        _warpAndAccumulate(user1, 20 days);
+
+        uint256 earnings = apyExtra.getLastEarnings(user1);
+        // Should only earn for 10 days until expiration
+        uint256 expected = (TEST_DEPOSIT_AMOUNT * TEST_EXTRA_APY * 10 days) /
+            (apyExtra.APY_DENOMINATOR() * 365 days);
+
+        assertEq(earnings, expected);
+    }
+
+    function test_GetLastEarnings_ZeroBalance() public view {
+        uint256 earnings = apyExtra.getLastEarnings(user1);
+        assertEq(earnings, 0);
+    }
+
+    // ============ SET TOKEN CONVERTER TESTS ============
+
+    function test_SetTokenConverter_OnlyAdmin() public {
+        address newConverter = address(
+            new MockTokenConverter(sourceToken, targetToken)
+        );
+
+        vm.prank(admin);
+        apyExtra.setTokenConverter(newConverter);
+
+        assertEq(address(apyExtra.tokenConverter()), newConverter);
+    }
+
+    function test_SetTokenConverter_ZeroAddress() public {
+        vm.prank(admin);
+        vm.expectRevert(APYExtra.InvalidConverter.selector);
+        apyExtra.setTokenConverter(address(0));
+    }
+
+    function test_SetTokenConverter_NonAdmin() public {
+        address newConverter = address(
+            new MockTokenConverter(sourceToken, targetToken)
+        );
+
+        vm.prank(attacker);
+        vm.expectRevert();
+        apyExtra.setTokenConverter(newConverter);
+    }
+
+    // ============ REFERRAL SYSTEM TESTS ============
+
+    function test_ReferralEarnings_Basic() public {
+        _depositForUser(
+            user1,
+            TEST_DEPOSIT_AMOUNT,
+            TEST_EXTRA_APY,
+            TEST_EXPIRATION,
+            referrer
+        );
+
+        _warpAndAccumulate(referrer, 30 days);
+
+        uint256 expected = (TEST_DEPOSIT_AMOUNT *
+            INITIAL_REFERRAL_APY *
+            30 days) / (apyExtra.APY_DENOMINATOR() * 365 days);
+        uint256 actual = apyExtra.getReferralsEarnings(referrer);
+
+        assertEq(actual, expected);
+    }
+
+    function test_ReferralEarnings_MultipleReferrals() public {
+        _depositForUser(
+            user1,
+            TEST_DEPOSIT_AMOUNT,
+            TEST_EXTRA_APY,
+            TEST_EXPIRATION,
+            referrer
+        );
+        _depositForUser(
+            user2,
+            TEST_DEPOSIT_AMOUNT * 2,
+            TEST_EXTRA_APY,
+            TEST_EXPIRATION,
+            referrer
+        );
+
+        _warpAndAccumulate(referrer, 30 days);
+
+        uint256 totalRefBalance = TEST_DEPOSIT_AMOUNT +
+            (TEST_DEPOSIT_AMOUNT * 2);
+        uint256 expected = (totalRefBalance * INITIAL_REFERRAL_APY * 30 days) /
+            (apyExtra.APY_DENOMINATOR() * 365 days);
+        uint256 actual = apyExtra.getReferralsEarnings(referrer);
+
+        assertEq(actual, expected);
+    }
+
+    function test_Referral_OnlySetOnFirstDeposit() public {
+        // First deposit sets referrer
+        _depositForUser(
+            user1,
+            TEST_DEPOSIT_AMOUNT,
+            TEST_EXTRA_APY,
+            TEST_EXPIRATION,
+            referrer
+        );
+
+        // Second deposit with different referrer should not change
+        _depositForUser(
+            user1,
+            TEST_DEPOSIT_AMOUNT,
+            TEST_EXTRA_APY,
+            TEST_EXPIRATION,
+            user2
+        );
+
+        (, , , , , address actualReferrer) = apyExtra.userInfo(user1);
+        assertEq(actualReferrer, referrer); // Should remain first referrer
+    }
 }
