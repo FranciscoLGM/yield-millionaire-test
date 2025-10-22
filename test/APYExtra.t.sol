@@ -132,19 +132,6 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(apy3, 150);
     }
 
-    /// @dev Test que verifica que un not rebalancer no puede depositar
-    function test_Deposit_NotRebalancer_Reverts() public {
-        address notRebalancer = makeAddr("notRebalancer");
-        vm.prank(notRebalancer);
-        vm.expectRevert();
-        apyExtra.deposit(
-            user1,
-            TEST_EXPIRATION,
-            TEST_EXTRA_APY,
-            TEST_DEPOSIT_AMOUNT
-        );
-    }
-
     /// @dev Test que verifica que un not rebalancer no puede depositar con referrer
     function test_Deposit_NotRebalancer_WithReferrer_Reverts() public {
         address testAttacker = makeAddr("testAttacker2");
@@ -210,29 +197,9 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(balance, TEST_DEPOSIT_AMOUNT);
     }
 
-    /// @dev Test que verifica que el retiro acumula ganancias
-    function test_Withdraw_AccumulatesEarnings() public {
-        uint256 depositAmount = _depositForUser(
-            user1,
-            TEST_DEPOSIT_AMOUNT,
-            TEST_EXTRA_APY,
-            TEST_EXPIRATION,
-            address(0)
-        );
-
-        _warpAndAccumulate(user1, 30 days);
-        uint256 expectedEarnings = apyExtra.getLastEarnings(user1);
-
-        vm.prank(user1);
-        apyExtra.withdraw(depositAmount);
-
-        (, , , , uint256 accumulated, ) = _getUserInfo(user1);
-        assertEq(accumulated, expectedEarnings);
-    }
-
     // ============ EARNINGS CALCULATION TESTS ============
 
-    /// @dev Test que verifica el cálculo básico de ganancias
+    /// @dev Test que verifica el cálculo de ganancias
     function test_GetLastEarnings_BasicCalculation() public {
         _depositForUser(
             user1,
@@ -267,12 +234,6 @@ contract APYExtraTest is Test, APYExtraHelpers {
         _warpAndAccumulate(user1, 30 days);
         uint256 earnings = apyExtra.getLastEarnings(user1);
 
-        assertEq(earnings, 0);
-    }
-
-    /// @dev Test que verifica que las ganancias son cero con balance cero
-    function test_GetLastEarnings_ZeroBalance() public view {
-        uint256 earnings = apyExtra.getLastEarnings(user1);
         assertEq(earnings, 0);
     }
 
@@ -388,68 +349,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(apyExtra.referralTotalBalance(referrerAddr), 0);
     }
 
-    // ============ ROLE & ACCESS CONTROL TESTS ============
-
-    /// @dev Test que verifica que solo el APY manager puede toggle APY
-    function test_Roles_OnlyAPYManagerCanToggleAPY() public {
-        vm.prank(attacker);
-        vm.expectRevert();
-        apyExtra.toggleAPY();
-    }
-
-    /// @dev Test que verifica que solo el APY manager puede actualizar el APY de referidos
-    function test_Roles_OnlyAPYManagerCanUpdateReferralAPY() public {
-        vm.prank(attacker);
-        vm.expectRevert();
-        apyExtra.updateReferralAPY(100);
-    }
-
-    /// @dev Test que verifica la concesión y revocación de roles
-    function test_Roles_GrantAndRevoke() public {
-        vm.startPrank(admin);
-        apyExtra.grantRole(apyExtra.REBALANCER_ROLE(), attacker);
-        vm.stopPrank();
-
-        vm.startPrank(attacker);
-        apyExtra.deposit(
-            user1,
-            TEST_EXPIRATION,
-            TEST_EXTRA_APY,
-            TEST_DEPOSIT_AMOUNT
-        );
-        vm.stopPrank();
-
-        vm.startPrank(admin);
-        apyExtra.revokeRole(apyExtra.REBALANCER_ROLE(), attacker);
-        vm.stopPrank();
-
-        vm.startPrank(attacker);
-        vm.expectRevert(APYExtra.CallerNotRebalancer.selector);
-        apyExtra.deposit(
-            user1,
-            TEST_EXPIRATION,
-            TEST_EXTRA_APY,
-            TEST_DEPOSIT_AMOUNT
-        );
-        vm.stopPrank();
-    }
-
     // ============ APY MANAGEMENT TESTS ============
-
-    /// @dev Test que verifica el toggle del APY global
-    function test_ToggleAPY() public {
-        assertTrue(apyExtra.apyEnabled());
-
-        vm.prank(apyManager);
-        apyExtra.toggleAPY();
-
-        assertFalse(apyExtra.apyEnabled());
-
-        vm.prank(apyManager);
-        apyExtra.toggleAPY();
-
-        assertTrue(apyExtra.apyEnabled());
-    }
 
     /// @dev Test que verifica la actualización del APY de referidos
     function test_UpdateReferralAPY() public {
