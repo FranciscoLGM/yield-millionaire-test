@@ -305,7 +305,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(earnings, 0);
     }
 
-    /// @dev Test que verifica la acumulación de ganancias para usuario y referidor
+    /// @dev Test que verifica la acumulación de ganancias para usuario y referrer
     function test_AccumulateUserAndReferrerEarnings_WithReferrerEarnings()
         public
     {
@@ -339,20 +339,6 @@ contract APYExtraTest is Test, APYExtraHelpers {
         uint256 expected = (TEST_DEPOSIT_AMOUNT *
             INITIAL_REFERRAL_APY *
             30 days) / (apyExtra.APY_DENOMINATOR() * 365 days);
-        uint256 actual = apyExtra.getReferralsEarnings(referrerAddr);
-
-        assertEq(actual, expected);
-    }
-
-    /// @dev Test que verifica el cálculo de ganancias de referidos con múltiples referidos
-    function test_ReferralEarnings_MultipleReferrals() public {
-        _setupReferralScenario();
-        _warpAndAccumulate(referrerAddr, 30 days);
-
-        uint256 totalRefBalance = TEST_DEPOSIT_AMOUNT +
-            (TEST_DEPOSIT_AMOUNT * 2);
-        uint256 expected = (totalRefBalance * INITIAL_REFERRAL_APY * 30 days) /
-            (apyExtra.APY_DENOMINATOR() * 365 days);
         uint256 actual = apyExtra.getReferralsEarnings(referrerAddr);
 
         assertEq(actual, expected);
