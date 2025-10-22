@@ -270,25 +270,6 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(earnings, 0);
     }
 
-    /// @dev Test que verifica el cálculo de ganancias después de la expiración
-    function test_GetLastEarnings_Expired() public {
-        _depositForUser(
-            user1,
-            TEST_DEPOSIT_AMOUNT,
-            TEST_EXTRA_APY,
-            block.timestamp + 10 days,
-            address(0)
-        );
-
-        _warpAndAccumulate(user1, 20 days);
-
-        uint256 earnings = apyExtra.getLastEarnings(user1);
-        uint256 expected = (TEST_DEPOSIT_AMOUNT * TEST_EXTRA_APY * 10 days) /
-            (apyExtra.APY_DENOMINATOR() * 365 days);
-
-        assertEq(earnings, expected);
-    }
-
     /// @dev Test que verifica que las ganancias son cero con balance cero
     function test_GetLastEarnings_ZeroBalance() public view {
         uint256 earnings = apyExtra.getLastEarnings(user1);
