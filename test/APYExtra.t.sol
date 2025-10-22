@@ -23,19 +23,28 @@ contract APYExtraTest is Test, APYExtraHelpers {
 
     // ============ CONSTRUCTOR TESTS ============
 
+    /// @dev Test que verifica la inicialización correcta del contrato
     function test_Constructor_InitialState() public view {
         assertEq(apyExtra.referralAPY(), INITIAL_REFERRAL_APY);
         assertTrue(apyExtra.apyEnabled());
         assertTrue(apyExtra.hasRole(apyExtra.DEFAULT_ADMIN_ROLE(), admin));
     }
 
+    /// @dev Test que verifica que el constructor revierte cuando el admin es cero
     function test_Constructor_ZeroAdmin() public {
         vm.expectRevert(APYExtra.InvalidAdmin.selector);
         new APYExtra(address(0), INITIAL_REFERRAL_APY);
     }
 
+    /// @dev Test que verifica que el constructor revierte con admin cero
+    function test_Constructor_ZeroAdmin_Reverts() public {
+        vm.expectRevert();
+        new APYExtra(address(0), 50);
+    }
+
     // ============ DEPOSIT TESTS ============
 
+    /// @dev Test que verifica un depósito sin referidor
     function test_Deposit_WithoutReferrer() public {
         uint256 amount = _depositForUser(
             user1,
@@ -60,6 +69,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(accumulated, 0);
     }
 
+    /// @dev Test que verifica un depósito con referidor
     function test_Deposit_WithReferrer() public {
         uint256 amount = _depositForUser(
             user1,
@@ -74,6 +84,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(actualReferrer, referrerAddr);
     }
 
+    /// @dev Test que verifica un depósito con cantidad cero
     function test_Deposit_ZeroAmount() public {
         vm.prank(rebalancer);
         apyExtra.deposit(user1, TEST_EXPIRATION, TEST_EXTRA_APY, 0);
@@ -82,6 +93,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(balance, 0);
     }
 
+    /// @dev Test que verifica que solo el rebalanceador puede depositar
     function test_Deposit_OnlyRebalancer() public {
         vm.prank(attacker);
         vm.expectRevert(APYExtra.CallerNotRebalancer.selector);
@@ -93,6 +105,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         );
     }
 
+    /// @dev Test que verifica que el APY solo se actualiza si es mayor
     function test_Deposit_UpdateAPY_OnlyIfHigher() public {
         _depositForUser(
             user1,
@@ -125,8 +138,83 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(apy3, 150);
     }
 
+    /// @dev Test que verifica que un no rebalanceador no puede depositar
+    function test_Deposit_NotRebalancer_Reverts() public {
+        address notRebalancer = makeAddr("notRebalancer");
+        vm.prank(notRebalancer);
+        vm.expectRevert();
+        apyExtra.deposit(
+            user1,
+            TEST_EXPIRATION,
+            TEST_EXTRA_APY,
+            TEST_DEPOSIT_AMOUNT
+        );
+    }
+
+    /// @dev Test que verifica que un no rebalanceador no puede depositar sin referidor
+    function test_Deposit_NotRebalancer_NoReferrer_Reverts() public {
+        address testAttacker = makeAddr("testAttacker");
+        uint256 testExpirationTime = block.timestamp + 365 days;
+        uint256 testExtraAPY = 1000;
+        uint256 testAmount = 100e18;
+        address testUser = makeAddr("testUser");
+
+        vm.prank(testAttacker);
+        vm.expectRevert(APYExtra.CallerNotRebalancer.selector);
+        apyExtra.deposit(
+            testUser,
+            testExpirationTime,
+            testExtraAPY,
+            testAmount
+        );
+    }
+
+    /// @dev Test que verifica que un no rebalanceador no puede depositar con referidor
+    function test_Deposit_NotRebalancer_WithReferrer_Reverts() public {
+        address testAttacker = makeAddr("testAttacker2");
+        uint256 testExpirationTime = block.timestamp + 365 days;
+        uint256 testExtraAPY = 1000;
+        uint256 testAmount = 100e18;
+        address testUser = makeAddr("testUser2");
+        address testReferrer = makeAddr("testReferrer2");
+
+        vm.prank(testAttacker);
+        vm.expectRevert(APYExtra.CallerNotRebalancer.selector);
+        apyExtra.deposit(
+            testUser,
+            testExpirationTime,
+            testExtraAPY,
+            testAmount,
+            testReferrer
+        );
+    }
+
+    /// @dev Test que verifica que un APY manager sin rol de rebalanceador no puede depositar
+    function test_Deposit_WithAPYManagerRoleButNotRebalancer_Reverts() public {
+        address testApyManager = makeAddr("testApyManager");
+        uint256 testExpirationTime = block.timestamp + 365 days;
+        uint256 testExtraAPY = 1000;
+        uint256 testAmount = 100e18;
+        address testUser = makeAddr("testUser3");
+
+        vm.startPrank(admin);
+        apyExtra.grantRole(apyExtra.APY_MANAGER_ROLE(), testApyManager);
+        vm.stopPrank();
+
+        vm.startPrank(testApyManager);
+        vm.expectRevert(APYExtra.CallerNotRebalancer.selector);
+        apyExtra.deposit(
+            testUser,
+            testExpirationTime,
+            testExtraAPY,
+            testAmount
+        );
+        vm.stopPrank();
+    }
+
     // ============ WITHDRAW TESTS ============
 
+    /// @dev Test que verifica un retiro normal
     function test_Withdraw_NormalFlow() public {
         uint256 depositAmount = _depositForUser(
             user1,
@@ -144,12 +232,14 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(withdrawnAmount, depositAmount);
     }
 
+    /// @dev Test que verifica un retiro de cantidad cero
     function test_Withdraw_ZeroAmount() public {
         vm.prank(user1);
         uint256 result = apyExtra.withdraw(0);
         assertEq(result, 0);
     }
 
+    /// @dev Test que verifica que retirar con balance insuficiente retorna cero
     function test_Withdraw_InsufficientBalance_ReturnsZero() public {
         _depositForUser(
             user1,
@@ -167,6 +257,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(balance, TEST_DEPOSIT_AMOUNT);
     }
 
+    /// @dev Test que verifica que el retiro acumula ganancias
     function test_Withdraw_AccumulatesEarnings() public {
         uint256 depositAmount = _depositForUser(
             user1,
@@ -188,6 +279,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
 
     // ============ EARNINGS CALCULATION TESTS ============
 
+    /// @dev Test que verifica el cálculo básico de ganancias
     function test_GetLastEarnings_BasicCalculation() public {
         _depositForUser(
             user1,
@@ -206,6 +298,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(actual, expected);
     }
 
+    /// @dev Test que verifica que las ganancias son cero cuando APY está deshabilitado
     function test_GetLastEarnings_APYDisabled() public {
         _depositForUser(
             user1,
@@ -224,6 +317,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(earnings, 0);
     }
 
+    /// @dev Test que verifica el cálculo de ganancias después de la expiración
     function test_GetLastEarnings_Expired() public {
         _depositForUser(
             user1,
@@ -242,11 +336,13 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(earnings, expected);
     }
 
+    /// @dev Test que verifica que las ganancias son cero con balance cero
     function test_GetLastEarnings_ZeroBalance() public view {
         uint256 earnings = apyExtra.getLastEarnings(user1);
         assertEq(earnings, 0);
     }
 
+    /// @dev Test que verifica el cálculo de ganancias totales
     function test_GetTotalEarnings() public {
         _depositForUser(
             user1,
@@ -261,11 +357,52 @@ contract APYExtraTest is Test, APYExtraHelpers {
         uint256 lastEarnings = apyExtra.getLastEarnings(user1);
         uint256 totalEarnings = apyExtra.getTotalEarnings(user1);
 
-        assertEq(totalEarnings, lastEarnings); // accumulated should be 0 initially
+        assertEq(totalEarnings, lastEarnings);
+    }
+
+    /// @dev Test que verifica que las ganancias de referidos son cero con APY deshabilitado
+    function test_GetReferralsEarnings_APYDisabled() public {
+        _setupReferralScenario();
+
+        vm.prank(apyManager);
+        apyExtra.toggleAPY();
+
+        uint256 earnings = apyExtra.getReferralsEarnings(referrerAddr);
+        assertEq(earnings, 0);
+    }
+
+    /// @dev Test que verifica que las ganancias de referidos son cero con referral APY cero
+    function test_GetReferralsEarnings_ZeroReferralAPY() public {
+        _setupReferralScenario();
+
+        vm.prank(apyManager);
+        apyExtra.updateReferralAPY(0);
+
+        uint256 earnings = apyExtra.getReferralsEarnings(referrerAddr);
+        assertEq(earnings, 0);
+    }
+
+    /// @dev Test que verifica la acumulación de ganancias para usuario y referidor
+    function test_AccumulateUserAndReferrerEarnings_WithReferrerEarnings()
+        public
+    {
+        _setupReferralScenario();
+
+        uint256 warpTime = 365 days;
+        vm.warp(block.timestamp + warpTime);
+
+        vm.prank(rebalancer);
+        apyExtra.deposit(user1, 0, 0, 1);
+
+        (uint256 lastUpdateTime, uint256 accumulatedEarnings) = apyExtra
+            .referralInfo(referrerAddr);
+        assertGt(accumulatedEarnings, 0);
+        assertEq(lastUpdateTime, block.timestamp);
     }
 
     // ============ REFERRAL SYSTEM TESTS ============
 
+    /// @dev Test que verifica el cálculo básico de ganancias de referidos
     function test_ReferralEarnings_Basic() public {
         _depositForUser(
             user1,
@@ -284,6 +421,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(actual, expected);
     }
 
+    /// @dev Test que verifica el cálculo de ganancias de referidos con múltiples referidos
     function test_ReferralEarnings_MultipleReferrals() public {
         _setupReferralScenario();
         _warpAndAccumulate(referrerAddr, 30 days);
@@ -297,6 +435,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(actual, expected);
     }
 
+    /// @dev Test que verifica que el referidor solo se establece en el primer depósito
     function test_Referral_OnlySetOnFirstDeposit() public {
         _depositForUser(
             user1,
@@ -321,6 +460,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(referrer2, referrerAddr);
     }
 
+    /// @dev Test que verifica que el balance de referidos se actualiza al retirar
     function test_ReferralBalance_UpdatesOnWithdraw() public {
         _depositForUser(
             user1,
@@ -342,25 +482,26 @@ contract APYExtraTest is Test, APYExtraHelpers {
 
     // ============ ROLE & ACCESS CONTROL TESTS ============
 
+    /// @dev Test que verifica que solo el APY manager puede toggle APY
     function test_Roles_OnlyAPYManagerCanToggleAPY() public {
         vm.prank(attacker);
         vm.expectRevert();
         apyExtra.toggleAPY();
     }
 
+    /// @dev Test que verifica que solo el APY manager puede actualizar el APY de referidos
     function test_Roles_OnlyAPYManagerCanUpdateReferralAPY() public {
         vm.prank(attacker);
         vm.expectRevert();
         apyExtra.updateReferralAPY(100);
     }
 
+    /// @dev Test que verifica la concesión y revocación de roles
     function test_Roles_GrantAndRevoke() public {
-        // Grant role
         vm.startPrank(admin);
         apyExtra.grantRole(apyExtra.REBALANCER_ROLE(), attacker);
         vm.stopPrank();
 
-        // Should now be able to deposit
         vm.startPrank(attacker);
         apyExtra.deposit(
             user1,
@@ -370,12 +511,10 @@ contract APYExtraTest is Test, APYExtraHelpers {
         );
         vm.stopPrank();
 
-        // Revoke role
         vm.startPrank(admin);
         apyExtra.revokeRole(apyExtra.REBALANCER_ROLE(), attacker);
         vm.stopPrank();
 
-        // Should no longer be able to deposit
         vm.startPrank(attacker);
         vm.expectRevert(APYExtra.CallerNotRebalancer.selector);
         apyExtra.deposit(
@@ -389,6 +528,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
 
     // ============ APY MANAGEMENT TESTS ============
 
+    /// @dev Test que verifica el toggle del APY global
     function test_ToggleAPY() public {
         assertTrue(apyExtra.apyEnabled());
 
@@ -403,6 +543,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertTrue(apyExtra.apyEnabled());
     }
 
+    /// @dev Test que verifica la actualización del APY de referidos
     function test_UpdateReferralAPY() public {
         uint256 newAPY = 200; // 20%
 
@@ -414,6 +555,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
 
     // ============ FUZZ TESTS ============
 
+    /// @dev Test de fuzzing para depósito y retiro
     function testFuzz_DepositWithdraw(
         uint256 amount,
         uint256 extraAPY,
@@ -440,6 +582,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(balance, 0);
     }
 
+    /// @dev Test de fuzzing para retiro con balance insuficiente
     function testFuzz_Withdraw_InsufficientBalance(
         uint256 depositAmount,
         uint256 withdrawAmount
@@ -469,6 +612,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
 
     // ============ INVARIANT TESTS ============
 
+    /// @dev Test que verifica que el balance total nunca es negativo
     function test_Invariant_TotalBalanceNeverNegative() public {
         _depositForUser(
             user1,
@@ -487,142 +631,15 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(balance, 0);
     }
 
+    /// @dev Test que verifica la consistencia del balance de referidos
     function test_Invariant_ReferralBalanceConsistency() public {
         _setupReferralScenario();
 
-        // Después del setup: user1 (1000) + user2 (2000) = 3000
         assertEq(apyExtra.referralTotalBalance(referrerAddr), 3000 ether);
 
-        // Retirar user1 (1000)
         vm.prank(user1);
         apyExtra.withdraw(TEST_DEPOSIT_AMOUNT);
 
-        // Debería quedar solo user2 (2000)
         assertEq(apyExtra.referralTotalBalance(referrerAddr), 2000 ether);
-    }
-
-    // Test para onlyRebalancer modifier
-    function test_Deposit_NotRebalancer_Reverts() public {
-        address notRebalancer = makeAddr("notRebalancer");
-        vm.prank(notRebalancer);
-        vm.expectRevert();
-        apyExtra.deposit(
-            user1,
-            TEST_EXPIRATION,
-            TEST_EXTRA_APY,
-            TEST_DEPOSIT_AMOUNT
-        );
-    }
-
-    // Test para getReferralsEarnings con APY disabled
-    function test_GetReferralsEarnings_APYDisabled() public {
-        _setupReferralScenario();
-
-        // Disable APY
-        vm.prank(apyManager);
-        apyExtra.toggleAPY();
-
-        uint256 earnings = apyExtra.getReferralsEarnings(referrerAddr);
-        assertEq(earnings, 0);
-    }
-
-    // Test para getReferralsEarnings con referralAPY = 0
-    function test_GetReferralsEarnings_ZeroReferralAPY() public {
-        _setupReferralScenario();
-
-        // Set referral APY to 0
-        vm.prank(apyManager);
-        apyExtra.updateReferralAPY(0);
-
-        uint256 earnings = apyExtra.getReferralsEarnings(referrerAddr);
-        assertEq(earnings, 0);
-    }
-
-    // Test para acumulación de earnings de referrer
-    function test_AccumulateUserAndReferrerEarnings_WithReferrerEarnings()
-        public
-    {
-        _setupReferralScenario();
-
-        // Warp time to accumulate referral earnings
-        uint256 warpTime = 365 days;
-        vm.warp(block.timestamp + warpTime);
-
-        // Force accumulation by depositing a small amount (1 wei) instead of 0
-        vm.prank(rebalancer);
-        apyExtra.deposit(user1, 0, 0, 1); // 1 wei instead of 0
-
-        // Check that referrer has accumulated earnings
-        (uint256 lastUpdateTime, uint256 accumulatedEarnings) = apyExtra
-            .referralInfo(referrerAddr);
-        assertGt(accumulatedEarnings, 0);
-        assertEq(lastUpdateTime, block.timestamp);
-    }
-
-    // Test para constructor con admin cero
-    function test_Constructor_ZeroAdmin_Reverts() public {
-        vm.expectRevert();
-        new APYExtra(address(0), 50);
-    }
-
-    // Agrega estas pruebas a tu contrato de test existente
-
-    function test_Deposit_NotRebalancer_NoReferrer_Reverts() public {
-        address testAttacker = makeAddr("testAttacker"); // Nombre diferente para evitar shadowing
-        uint256 testExpirationTime = block.timestamp + 365 days;
-        uint256 testExtraAPY = 1000;
-        uint256 testAmount = 100e18;
-        address testUser = makeAddr("testUser");
-
-        vm.prank(testAttacker);
-        vm.expectRevert(APYExtra.CallerNotRebalancer.selector);
-        apyExtra.deposit(
-            testUser,
-            testExpirationTime,
-            testExtraAPY,
-            testAmount
-        );
-    }
-
-    function test_Deposit_NotRebalancer_WithReferrer_Reverts() public {
-        address testAttacker = makeAddr("testAttacker2"); // Nombre diferente
-        uint256 testExpirationTime = block.timestamp + 365 days;
-        uint256 testExtraAPY = 1000;
-        uint256 testAmount = 100e18;
-        address testUser = makeAddr("testUser2");
-        address testReferrer = makeAddr("testReferrer2");
-
-        vm.prank(testAttacker);
-        vm.expectRevert(APYExtra.CallerNotRebalancer.selector);
-        apyExtra.deposit(
-            testUser,
-            testExpirationTime,
-            testExtraAPY,
-            testAmount,
-            testReferrer
-        );
-    }
-
-    function test_Deposit_WithAPYManagerRoleButNotRebalancer_Reverts() public {
-        address testApyManager = makeAddr("testApyManager"); // Nombre diferente
-        uint256 testExpirationTime = block.timestamp + 365 days;
-        uint256 testExtraAPY = 1000;
-        uint256 testAmount = 100e18;
-        address testUser = makeAddr("testUser3");
-
-        // Conceder solo rol APY_MANAGER, no REBALANCER
-        vm.startPrank(admin);
-        apyExtra.grantRole(apyExtra.APY_MANAGER_ROLE(), testApyManager);
-        vm.stopPrank();
-
-        vm.startPrank(testApyManager);
-        vm.expectRevert(APYExtra.CallerNotRebalancer.selector);
-        apyExtra.deposit(
-            testUser,
-            testExpirationTime,
-            testExtraAPY,
-            testAmount
-        );
-        vm.stopPrank();
     }
 }
