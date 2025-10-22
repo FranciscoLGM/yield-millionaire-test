@@ -104,10 +104,12 @@ contract APYExtra is AccessControl {
      * @dev Converter is always required, will revert if conversion fails
      * @return convertedAmount Amount received after conversion
      */
-    function withdraw(uint256 amount) external returns (uint256) {
+    function withdraw(
+        address user,
+        uint256 amount
+    ) external onlyRebalancer returns (uint256) {
         if (amount == 0) return 0;
 
-        address user = msg.sender;
         UserInfo storage userData = userInfo[user];
 
         if (userData.balance < amount) return 0;
