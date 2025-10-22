@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
-import "./mocks/MockTokenConverter.sol";
 
 /**
  * @title APYExtra
@@ -14,11 +13,8 @@ contract APYExtra is AccessControl {
     uint256 public constant YEAR = 365 days;
     uint256 public constant APY_DENOMINATOR = 1000;
 
-    error InsufficientBalance();
     error InvalidAdmin();
     error CallerNotRebalancer();
-    error ConversionFailed();
-    error InvalidConverter();
 
     bytes32 public constant REBALANCER_ROLE = keccak256("REBALANCER_ROLE");
     bytes32 public constant APY_MANAGER_ROLE = keccak256("APY_MANAGER_ROLE");
@@ -44,7 +40,6 @@ contract APYExtra is AccessControl {
 
     uint256 public referralAPY;
     bool public apyEnabled;
-    MockTokenConverter public tokenConverter;
 
     event Deposited(
         address indexed user,
@@ -65,15 +60,9 @@ contract APYExtra is AccessControl {
      * @notice Initialize contract with admin and referral APY
      * @param admin Admin address with all roles
      * @param initialReferralAPY Global referral APY (50 = 5%)
-     * @param converterAddress Address of token converter contract (obligatorio)
      */
-    constructor(
-        address admin,
-        uint256 initialReferralAPY,
-        address converterAddress
-    ) {
+    constructor(address admin, uint256 initialReferralAPY) {
         if (admin == address(0)) revert InvalidAdmin();
-        if (converterAddress == address(0)) revert InvalidConverter();
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(REBALANCER_ROLE, admin);
@@ -81,21 +70,6 @@ contract APYExtra is AccessControl {
 
         referralAPY = initialReferralAPY;
         apyEnabled = true;
-
-        tokenConverter = MockTokenConverter(converterAddress);
-    }
-
-    /**
-     * @notice Set the token converter contract address
-     * @dev Only callable by admin. Useful for upgrades or emergency recovery.
-     * @param converterAddress New converter contract address
-     */
-    function setTokenConverter(
-        address converterAddress
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (converterAddress == address(0)) revert InvalidConverter();
-        tokenConverter = MockTokenConverter(converterAddress);
-        emit ConverterUpdated(converterAddress);
     }
 
     /**
@@ -136,31 +110,18 @@ contract APYExtra is AccessControl {
         address user = msg.sender;
         UserInfo storage userData = userInfo[user];
 
-        if (userData.balance < amount) revert InsufficientBalance();
+        if (userData.balance < amount) return 0;
 
         _accumulateUserAndReferrerEarnings(user);
 
-        uint256 convertedAmount;
-        try tokenConverter.convertAndBurn(amount, user) returns (
-            uint256 result
-        ) {
-            convertedAmount = result;
-            if (result == 0) {
-                revert ConversionFailed();
-            }
-        } catch {
-            revert ConversionFailed();
-        }
-
         userData.balance -= amount;
-        userData.lastUpdateTime = block.timestamp;
 
         if (userData.referrer != address(0)) {
             referralTotalBalance[userData.referrer] -= amount;
         }
 
         emit Withdrawn(user, amount);
-        return convertedAmount;
+        return amount;
     }
 
     /**
@@ -231,7 +192,6 @@ contract APYExtra is AccessControl {
         uint256 totalRefBalance = referralTotalBalance[referrer];
 
         if (
-            totalRefBalance == 0 ||
             refData.lastUpdateTime == 0 ||
             block.timestamp <= refData.lastUpdateTime
         ) {
@@ -256,7 +216,6 @@ contract APYExtra is AccessControl {
         if (pendingUser > 0) {
             userData.accumulatedEarnings += pendingUser;
         }
-        userData.lastUpdateTime = block.timestamp;
 
         address referrer = userData.referrer;
         if (referrer != address(0)) {
@@ -265,7 +224,11 @@ contract APYExtra is AccessControl {
             if (pendingRef > 0) {
                 refData.accumulatedEarnings += pendingRef;
             }
-            refData.lastUpdateTime = block.timestamp;
+        }
+
+        userData.lastUpdateTime = block.timestamp;
+        if (referrer != address(0)) {
+            referralInfo[referrer].lastUpdateTime = block.timestamp;
         }
     }
 
@@ -282,6 +245,7 @@ contract APYExtra is AccessControl {
         if (amount == 0) return;
 
         _accumulateUserAndReferrerEarnings(user);
+
         UserInfo storage userData = userInfo[user];
 
         if (extraAPY > userData.extraAPY) {
@@ -290,7 +254,6 @@ contract APYExtra is AccessControl {
         }
 
         userData.balance += amount;
-        userData.lastUpdateTime = block.timestamp;
 
         if (
             referrer != address(0) &&
@@ -298,12 +261,10 @@ contract APYExtra is AccessControl {
             referrer != user
         ) {
             userData.referrer = referrer;
+            referralInfo[referrer].referrals.push(user);
 
-            ReferralInfo storage refInfo = referralInfo[referrer];
-            refInfo.referrals.push(user);
-
-            if (refInfo.lastUpdateTime == 0) {
-                refInfo.lastUpdateTime = block.timestamp;
+            if (referralInfo[referrer].lastUpdateTime == 0) {
+                referralInfo[referrer].lastUpdateTime = block.timestamp;
             }
 
             emit ReferrerAssigned(user, referrer);

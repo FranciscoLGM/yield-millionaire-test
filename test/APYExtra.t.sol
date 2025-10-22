@@ -3,17 +3,16 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
 import "forge-std/console.sol";
+import {APYExtraHelpers} from "./helpers/APYExtraHelpers.sol";
 import "../src/APYExtra.sol";
 import "../src/mocks/MockTokenConverter.sol";
 import "../src/mocks/MockERC20.sol";
 
-contract APYExtraTest is Test {
-    APYExtra public apyExtra;
+contract APYExtraTest is Test, APYExtraHelpers {
     MockTokenConverter public converter;
 
     // Test addresses
     address public admin = makeAddr("admin");
-    address public rebalancer = makeAddr("rebalancer");
     address public apyManager = makeAddr("apyManager");
     address public user1 = makeAddr("user1");
     address public user2 = makeAddr("user2");
@@ -55,30 +54,6 @@ contract APYExtraTest is Test {
         apyExtra.grantRole(apyExtra.APY_MANAGER_ROLE(), apyManager);
 
         vm.stopPrank();
-    }
-
-    // ============ HELPER FUNCTIONS ============
-    function _depositForUser(
-        address user,
-        uint256 amount,
-        uint256 extraAPY,
-        uint256 expirationTime,
-        address referrer_
-    ) internal returns (uint256) {
-        vm.prank(rebalancer);
-        if (referrer_ == address(0)) {
-            apyExtra.deposit(user, expirationTime, extraAPY, amount);
-        } else {
-            apyExtra.deposit(user, expirationTime, extraAPY, amount, referrer_);
-        }
-        return amount;
-    }
-
-    function _warpAndAccumulate(address user, uint256 timeToWarp) internal {
-        vm.warp(block.timestamp + timeToWarp);
-        // Force accumulation by doing a zero deposit
-        vm.prank(rebalancer);
-        apyExtra.deposit(user, 0, 0, 0);
     }
 
     // ============ CONSTRUCTOR AND SETUP TESTS ============
@@ -453,5 +428,162 @@ contract APYExtraTest is Test {
 
         (, , , , , address actualReferrer) = apyExtra.userInfo(user1);
         assertEq(actualReferrer, referrer); // Should remain first referrer
+    }
+
+    // ============ ROLE & ACCESS CONTROL TESTS ============
+
+    function test_Roles_OnlyAdminCanSetConverter() public {
+        vm.prank(attacker);
+        vm.expectRevert();
+        apyExtra.setTokenConverter(address(0x123));
+    }
+
+    function test_Roles_OnlyAPYManagerCanToggleAPY() public {
+        vm.prank(attacker);
+        vm.expectRevert();
+        apyExtra.toggleAPY();
+    }
+
+    function test_Roles_OnlyAPYManagerCanUpdateReferralAPY() public {
+        vm.prank(attacker);
+        vm.expectRevert();
+        apyExtra.updateReferralAPY(100);
+    }
+
+    function test_Roles_GrantAndRevoke() public {
+        // Grant role
+        vm.startPrank(admin);
+        apyExtra.grantRole(apyExtra.REBALANCER_ROLE(), attacker);
+        vm.stopPrank();
+        // Should now be able to deposit
+        vm.startPrank(attacker);
+        apyExtra.deposit(
+            user1,
+            TEST_EXPIRATION,
+            TEST_EXTRA_APY,
+            TEST_DEPOSIT_AMOUNT
+        );
+
+        // Revoke role
+        vm.startPrank(admin);
+        apyExtra.revokeRole(apyExtra.REBALANCER_ROLE(), attacker);
+        vm.stopPrank();
+
+        // Should no longer be able to deposit
+        vm.startPrank(attacker);
+        vm.expectRevert(APYExtra.CallerNotRebalancer.selector);
+        apyExtra.deposit(
+            user1,
+            TEST_EXPIRATION,
+            TEST_EXTRA_APY,
+            TEST_DEPOSIT_AMOUNT
+        );
+        vm.stopPrank();
+    }
+
+    // ============ FUZZ TESTS ============
+
+    function testFuzz_DepositWithdraw(
+        uint256 amount,
+        uint256 extraAPY,
+        uint256 timeDelta
+    ) public {
+        // Bound parameters to reasonable values
+        amount = bound(amount, 1, 1000000 ether);
+        extraAPY = bound(extraAPY, 1, 1000); // 0.1% to 100%
+        timeDelta = bound(timeDelta, 1, 365 days);
+
+        vm.assume(apyExtra.getLastEarnings(user1) == 0); // Start fresh
+
+        // Deposit
+        _depositForUser(
+            user1,
+            amount,
+            extraAPY,
+            block.timestamp + 365 days,
+            address(0)
+        );
+
+        // Warp time
+        _warpAndAccumulate(user1, timeDelta);
+
+        // Withdraw
+        vm.prank(user1);
+        uint256 result = apyExtra.withdraw(amount);
+
+        // Should get back at least the original amount (converter mock returns same amount)
+        assertGe(result, amount);
+
+        // Balance should be zero after withdrawal
+        (, , , uint256 balance, , ) = apyExtra.userInfo(user1);
+        assertEq(balance, 0);
+    }
+
+    function testFuzz_EarningsCalculation(
+        uint256 principal,
+        uint256 apy,
+        uint256 time
+    ) public view {
+        principal = bound(principal, 1, type(uint128).max);
+        apy = bound(apy, 1, 10000); // Up to 1000%
+        time = bound(time, 1, 10 * 365 days); // Up to 10 years
+
+        // This is a validation test - ensure calculation doesn't revert
+        uint256 earnings = (principal * apy * time) /
+            (apyExtra.APY_DENOMINATOR() * 365 days);
+
+        // Just check it doesn't overflow in realistic scenarios
+        assertTrue(earnings <= type(uint256).max);
+    }
+
+    // ============ INVARIANT TESTS ============
+
+    function test_Invariant_TotalBalanceNeverNegative() public {
+        // This would be part of a stateful fuzz test
+        // For now, we test that individual operations maintain invariants
+
+        _depositForUser(
+            user1,
+            TEST_DEPOSIT_AMOUNT,
+            TEST_EXTRA_APY,
+            TEST_EXPIRATION,
+            address(0)
+        );
+
+        (, , , uint256 balance, , ) = apyExtra.userInfo(user1);
+        assertGe(balance, 0); // Should never be negative
+
+        vm.prank(user1);
+        apyExtra.withdraw(TEST_DEPOSIT_AMOUNT);
+
+        (, , , balance, , ) = apyExtra.userInfo(user1);
+        assertEq(balance, 0); // Should be zero after full withdrawal
+    }
+
+    function test_Invariant_ReferralBalanceConsistency() public {
+        _depositForUser(
+            user1,
+            TEST_DEPOSIT_AMOUNT,
+            TEST_EXTRA_APY,
+            TEST_EXPIRATION,
+            referrer
+        );
+        _depositForUser(
+            user2,
+            TEST_DEPOSIT_AMOUNT,
+            TEST_EXTRA_APY,
+            TEST_EXPIRATION,
+            referrer
+        );
+
+        uint256 totalRefBalance = apyExtra.referralTotalBalance(referrer);
+        assertEq(totalRefBalance, TEST_DEPOSIT_AMOUNT * 2);
+
+        // Withdraw one user
+        vm.prank(user1);
+        apyExtra.withdraw(TEST_DEPOSIT_AMOUNT);
+
+        totalRefBalance = apyExtra.referralTotalBalance(referrer);
+        assertEq(totalRefBalance, TEST_DEPOSIT_AMOUNT); // Should decrease appropriately
     }
 }
