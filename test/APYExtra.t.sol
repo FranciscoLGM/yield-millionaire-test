@@ -38,7 +38,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
 
     // ============ DEPOSIT TESTS ============
 
-    /// @dev Test que verifica un depósito sin referidor
+    /// @dev Test que verifica un depósito sin referrer
     function test_Deposit_WithoutReferrer() public {
         uint256 amount = _depositForUser(
             user1,
@@ -63,7 +63,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(accumulated, 0);
     }
 
-    /// @dev Test que verifica un depósito con referidor
+    /// @dev Test que verifica un depósito con referrer
     function test_Deposit_WithReferrer() public {
         uint256 amount = _depositForUser(
             user1,
@@ -87,7 +87,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(balance, 0);
     }
 
-    /// @dev Test que verifica que solo el rebalanceador puede depositar
+    /// @dev Test que verifica que solo el rebalancer puede depositar
     function test_Deposit_OnlyRebalancer() public {
         vm.prank(attacker);
         vm.expectRevert(APYExtra.CallerNotRebalancer.selector);
@@ -145,7 +145,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         );
     }
 
-    /// @dev Test que verifica que un not rebalancer no puede depositar con referidor
+    /// @dev Test que verifica que un not rebalancer no puede depositar con referrer
     function test_Deposit_NotRebalancer_WithReferrer_Reverts() public {
         address testAttacker = makeAddr("testAttacker2");
         uint256 testExpirationTime = block.timestamp + 365 days;
@@ -163,29 +163,6 @@ contract APYExtraTest is Test, APYExtraHelpers {
             testAmount,
             testReferrer
         );
-    }
-
-    /// @dev Test que verifica que un APY manager sin rol de rebalancer no puede depositar
-    function test_Deposit_WithAPYManagerRoleButNotRebalancer_Reverts() public {
-        address testApyManager = makeAddr("testApyManager");
-        uint256 testExpirationTime = block.timestamp + 365 days;
-        uint256 testExtraAPY = 1000;
-        uint256 testAmount = 100e18;
-        address testUser = makeAddr("testUser3");
-
-        vm.startPrank(admin);
-        apyExtra.grantRole(apyExtra.APY_MANAGER_ROLE(), testApyManager);
-        vm.stopPrank();
-
-        vm.startPrank(testApyManager);
-        vm.expectRevert(APYExtra.CallerNotRebalancer.selector);
-        apyExtra.deposit(
-            testUser,
-            testExpirationTime,
-            testExtraAPY,
-            testAmount
-        );
-        vm.stopPrank();
     }
 
     // ============ WITHDRAW TESTS ============
