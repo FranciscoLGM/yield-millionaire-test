@@ -164,8 +164,8 @@ contract APYExtraTest is Test, APYExtraHelpers {
             address(0)
         );
 
-        vm.prank(user1);
-        uint256 withdrawnAmount = apyExtra.withdraw(depositAmount);
+        vm.prank(rebalancer);
+        uint256 withdrawnAmount = apyExtra.withdraw(user1, depositAmount);
 
         (, , , uint256 balanceAfter, , ) = _getUserInfo(user1);
         assertEq(balanceAfter, 0);
@@ -174,8 +174,8 @@ contract APYExtraTest is Test, APYExtraHelpers {
 
     /// @dev Test que verifica un retiro de cantidad cero
     function test_Withdraw_ZeroAmount() public {
-        vm.prank(user1);
-        uint256 result = apyExtra.withdraw(0);
+        vm.prank(rebalancer);
+        uint256 result = apyExtra.withdraw(user1, 0);
         assertEq(result, 0);
     }
 
@@ -189,8 +189,8 @@ contract APYExtraTest is Test, APYExtraHelpers {
             address(0)
         );
 
-        vm.prank(user1);
-        uint256 result = apyExtra.withdraw(TEST_DEPOSIT_AMOUNT + 1);
+        vm.prank(rebalancer);
+        uint256 result = apyExtra.withdraw(user1, TEST_DEPOSIT_AMOUNT + 1);
 
         assertEq(result, 0);
         (, , , uint256 balance, , ) = _getUserInfo(user1);
@@ -285,7 +285,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
 
     // ============ REFERRAL SYSTEM TESTS ============
 
-    /// @dev Test que verifica el cálculo básico de ganancias de referidos
+    /// @dev Test que verifica el cálculo de ganancias de referidos
     function test_ReferralEarnings_Basic() public {
         _depositForUser(
             user1,
@@ -343,10 +343,56 @@ contract APYExtraTest is Test, APYExtraHelpers {
             TEST_DEPOSIT_AMOUNT
         );
 
-        vm.prank(user1);
-        apyExtra.withdraw(TEST_DEPOSIT_AMOUNT);
+        vm.prank(rebalancer);
+        apyExtra.withdraw(user1, TEST_DEPOSIT_AMOUNT);
 
         assertEq(apyExtra.referralTotalBalance(referrerAddr), 0);
+    }
+
+    // ============ ROLE & ACCESS CONTROL TESTS ============
+
+    /// @dev Test que verifica que solo el APY manager puede toggle APY
+    function test_Roles_OnlyAPYManagerCanToggleAPY() public {
+        vm.prank(attacker);
+        vm.expectRevert();
+        apyExtra.toggleAPY();
+    }
+
+    /// @dev Test que verifica que solo el APY manager puede actualizar el APY de referidos
+    function test_Roles_OnlyAPYManagerCanUpdateReferralAPY() public {
+        vm.prank(attacker);
+        vm.expectRevert();
+        apyExtra.updateReferralAPY(100);
+    }
+
+    /// @dev Test que verifica la concesión y revocación de roles
+    function test_Roles_GrantAndRevoke() public {
+        vm.startPrank(admin);
+        apyExtra.grantRole(apyExtra.REBALANCER_ROLE(), attacker);
+        vm.stopPrank();
+
+        vm.startPrank(attacker);
+        apyExtra.deposit(
+            user1,
+            TEST_EXPIRATION,
+            TEST_EXTRA_APY,
+            TEST_DEPOSIT_AMOUNT
+        );
+        vm.stopPrank();
+
+        vm.startPrank(admin);
+        apyExtra.revokeRole(apyExtra.REBALANCER_ROLE(), attacker);
+        vm.stopPrank();
+
+        vm.startPrank(attacker);
+        vm.expectRevert(APYExtra.CallerNotRebalancer.selector);
+        apyExtra.deposit(
+            user1,
+            TEST_EXPIRATION,
+            TEST_EXTRA_APY,
+            TEST_DEPOSIT_AMOUNT
+        );
+        vm.stopPrank();
     }
 
     // ============ APY MANAGEMENT TESTS ============
@@ -376,8 +422,8 @@ contract APYExtraTest is Test, APYExtraHelpers {
         _depositForUser(user1, amount, extraAPY, 365 days, address(0));
         _warpAndAccumulate(user1, timeDelta);
 
-        vm.prank(user1);
-        uint256 result = apyExtra.withdraw(amount);
+        vm.prank(rebalancer);
+        uint256 result = apyExtra.withdraw(user1, amount);
 
         assertEq(result, amount);
         (, , , uint256 balance, , ) = _getUserInfo(user1);
@@ -404,8 +450,8 @@ contract APYExtraTest is Test, APYExtraHelpers {
             address(0)
         );
 
-        vm.prank(user1);
-        uint256 result = apyExtra.withdraw(withdrawAmount);
+        vm.prank(rebalancer);
+        uint256 result = apyExtra.withdraw(user1, withdrawAmount);
 
         assertEq(result, 0);
         (, , , uint256 balance, , ) = _getUserInfo(user1);
@@ -426,8 +472,8 @@ contract APYExtraTest is Test, APYExtraHelpers {
         (, , , uint256 balance, , ) = _getUserInfo(user1);
         assertGe(balance, 0);
 
-        vm.prank(user1);
-        apyExtra.withdraw(TEST_DEPOSIT_AMOUNT);
+        vm.prank(rebalancer);
+        apyExtra.withdraw(user1, TEST_DEPOSIT_AMOUNT);
 
         (, , , balance, , ) = _getUserInfo(user1);
         assertEq(balance, 0);
@@ -439,9 +485,24 @@ contract APYExtraTest is Test, APYExtraHelpers {
 
         assertEq(apyExtra.referralTotalBalance(referrerAddr), 3000 ether);
 
-        vm.prank(user1);
-        apyExtra.withdraw(TEST_DEPOSIT_AMOUNT);
+        vm.prank(rebalancer);
+        apyExtra.withdraw(user1, TEST_DEPOSIT_AMOUNT);
 
         assertEq(apyExtra.referralTotalBalance(referrerAddr), 2000 ether);
+    }
+
+    /// @dev Test que verifica que solo el rebalancer puede hacer withdraw
+    function test_Withdraw_OnlyRebalancer() public {
+        _depositForUser(
+            user1,
+            TEST_DEPOSIT_AMOUNT,
+            TEST_EXTRA_APY,
+            TEST_EXPIRATION,
+            address(0)
+        );
+
+        vm.prank(attacker);
+        vm.expectRevert(APYExtra.CallerNotRebalancer.selector);
+        apyExtra.withdraw(user1, TEST_DEPOSIT_AMOUNT);
     }
 }
