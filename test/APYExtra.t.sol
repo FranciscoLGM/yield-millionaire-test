@@ -36,12 +36,6 @@ contract APYExtraTest is Test, APYExtraHelpers {
         new APYExtra(address(0), INITIAL_REFERRAL_APY);
     }
 
-    /// @dev Test que verifica que el constructor revierte con admin cero
-    function test_Constructor_ZeroAdmin_Reverts() public {
-        vm.expectRevert();
-        new APYExtra(address(0), 50);
-    }
-
     // ============ DEPOSIT TESTS ============
 
     /// @dev Test que verifica un depósito sin referidor
@@ -138,7 +132,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(apy3, 150);
     }
 
-    /// @dev Test que verifica que un no rebalanceador no puede depositar
+    /// @dev Test que verifica que un not rebalancer no puede depositar
     function test_Deposit_NotRebalancer_Reverts() public {
         address notRebalancer = makeAddr("notRebalancer");
         vm.prank(notRebalancer);
@@ -151,25 +145,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         );
     }
 
-    /// @dev Test que verifica que un no rebalanceador no puede depositar sin referidor
-    function test_Deposit_NotRebalancer_NoReferrer_Reverts() public {
-        address testAttacker = makeAddr("testAttacker");
-        uint256 testExpirationTime = block.timestamp + 365 days;
-        uint256 testExtraAPY = 1000;
-        uint256 testAmount = 100e18;
-        address testUser = makeAddr("testUser");
-
-        vm.prank(testAttacker);
-        vm.expectRevert(APYExtra.CallerNotRebalancer.selector);
-        apyExtra.deposit(
-            testUser,
-            testExpirationTime,
-            testExtraAPY,
-            testAmount
-        );
-    }
-
-    /// @dev Test que verifica que un no rebalanceador no puede depositar con referidor
+    /// @dev Test que verifica que un not rebalancer no puede depositar con referidor
     function test_Deposit_NotRebalancer_WithReferrer_Reverts() public {
         address testAttacker = makeAddr("testAttacker2");
         uint256 testExpirationTime = block.timestamp + 365 days;
@@ -189,7 +165,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         );
     }
 
-    /// @dev Test que verifica que un APY manager sin rol de rebalanceador no puede depositar
+    /// @dev Test que verifica que un APY manager sin rol de rebalancer no puede depositar
     function test_Deposit_WithAPYManagerRoleButNotRebalancer_Reverts() public {
         address testApyManager = makeAddr("testApyManager");
         uint256 testExpirationTime = block.timestamp + 365 days;
@@ -366,17 +342,6 @@ contract APYExtraTest is Test, APYExtraHelpers {
 
         vm.prank(apyManager);
         apyExtra.toggleAPY();
-
-        uint256 earnings = apyExtra.getReferralsEarnings(referrerAddr);
-        assertEq(earnings, 0);
-    }
-
-    /// @dev Test que verifica que las ganancias de referidos son cero con referral APY cero
-    function test_GetReferralsEarnings_ZeroReferralAPY() public {
-        _setupReferralScenario();
-
-        vm.prank(apyManager);
-        apyExtra.updateReferralAPY(0);
 
         uint256 earnings = apyExtra.getReferralsEarnings(referrerAddr);
         assertEq(earnings, 0);

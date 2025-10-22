@@ -11,9 +11,9 @@ abstract contract APYExtraHelpers is Test {
     // Test addresses para reutilización
     address public user1 = makeAddr("user1");
     address public user2 = makeAddr("user2");
-    address public referrerAddr = makeAddr("referrerAddr"); // Cambiado para evitar shadowing
+    address public referrerAddr = makeAddr("referrerAddr");
 
-    // Test parameters estándar
+    // Test parameters
     uint256 public constant TEST_DEPOSIT_AMOUNT = 1000 ether;
     uint256 public constant TEST_EXTRA_APY = 20; // 2%
     uint256 public constant TEST_EXPIRATION = 365 days;
