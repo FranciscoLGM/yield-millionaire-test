@@ -44,7 +44,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
             user1,
             TEST_DEPOSIT_AMOUNT,
             TEST_EXTRA_APY,
-            block.timestamp + TEST_EXPIRATION,
+            TEST_EXPIRATION,
             address(0)
         );
 
@@ -69,7 +69,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
             user1,
             TEST_DEPOSIT_AMOUNT,
             TEST_EXTRA_APY,
-            block.timestamp + TEST_EXPIRATION,
+            TEST_EXPIRATION,
             referrerAddr
         );
 
@@ -148,7 +148,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
     /// @dev Test que verifica que un not rebalancer no puede depositar con referrer
     function test_Deposit_NotRebalancer_WithReferrer_Reverts() public {
         address testAttacker = makeAddr("testAttacker2");
-        uint256 testExpirationTime = block.timestamp + 365 days;
+        uint256 testExpirationTime = 365 days;
         uint256 testExtraAPY = 1000;
         uint256 testAmount = 100e18;
         address testUser = makeAddr("testUser2");
@@ -173,7 +173,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
             user1,
             TEST_DEPOSIT_AMOUNT,
             TEST_EXTRA_APY,
-            block.timestamp + TEST_EXPIRATION,
+            TEST_EXPIRATION,
             address(0)
         );
 
@@ -216,7 +216,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
             user1,
             TEST_DEPOSIT_AMOUNT,
             TEST_EXTRA_APY,
-            block.timestamp + TEST_EXPIRATION,
+            TEST_EXPIRATION,
             address(0)
         );
 
@@ -238,7 +238,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
             user1,
             TEST_DEPOSIT_AMOUNT,
             TEST_EXTRA_APY,
-            block.timestamp + 365 days,
+            365 days,
             address(0)
         );
 
@@ -311,8 +311,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
     {
         _setupReferralScenario();
 
-        uint256 warpTime = 365 days;
-        vm.warp(block.timestamp + warpTime);
+        vm.warp(365 days);
 
         vm.prank(rebalancer);
         apyExtra.deposit(user1, 0, 0, 1);
@@ -344,7 +343,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         assertEq(actual, expected);
     }
 
-    /// @dev Test que verifica que el referidor solo se establece en el primer depósito
+    /// @dev Test que verifica que el referrer solo se establece en el primer depósito
     function test_Referral_OnlySetOnFirstDeposit() public {
         _depositForUser(
             user1,
@@ -474,13 +473,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
         extraAPY = bound(extraAPY, 1, 1000);
         timeDelta = bound(timeDelta, 1, 365 days);
 
-        _depositForUser(
-            user1,
-            amount,
-            extraAPY,
-            block.timestamp + 365 days,
-            address(0)
-        );
+        _depositForUser(user1, amount, extraAPY, 365 days, address(0));
         _warpAndAccumulate(user1, timeDelta);
 
         vm.prank(user1);
@@ -521,7 +514,7 @@ contract APYExtraTest is Test, APYExtraHelpers {
 
     // ============ INVARIANT TESTS ============
 
-    /// @dev Test que verifica que el balance total nunca es negativo
+    /// @dev Test que verifica que el balance total nunca sea negativo
     function test_Invariant_TotalBalanceNeverNegative() public {
         _depositForUser(
             user1,
